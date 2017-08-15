@@ -1,0 +1,192 @@
+/*
+    File: plugin.cpp
+    Created on: 14/08/2017
+    Author: Felix de las Pozas Alvarez
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
+// Project
+#include "plugin.h"
+
+// C++
+#include <windows.h>
+#include <winuser.h>
+#include <tchar.h>
+#include <cstring>
+#include <vector>
+#include <iostream>
+#include <fstream>
+
+// Winamp SDK
+#include <Winamp/wa_ipc.h>
+
+#ifndef UNICODE
+#define UNICODE
+#endif
+  
+char PLUGIN_NAME[] = "Now Playing! v1.0";
+
+static struct Data s_data;
+
+/** \brief Sets our own method as the pointer to the given handle.
+ * \param[in] hwnd Handle receiving messages.
+ * \param[in] WndProc procesure processing those messages.
+ *
+ */
+static WNDPROC subclass(HWND hwnd, WNDPROC WndProc)
+{
+  if(IsWindowUnicode(hwnd))
+  {
+    return (WNDPROC)SetWindowLongPtrW(hwnd,GWLP_WNDPROC,(LPARAM)WndProc);
+  }
+
+  return (WNDPROC)SetWindowLongPtrA(hwnd,GWLP_WNDPROC,(LPARAM)WndProc);
+}
+
+// Callback functions/events which will be called by Winamp
+int init(void);    // called during Winamp initialization.
+void config(void); // plugin configuration dialog.
+void quit(void);   // called during Winamp shutdown.
+
+// this structure contains plugin information, version, name... defined in Winamp SDK Gen.h for generic plugins.
+// GPPHDR_VER is the version of the winampGeneralPurposePlugin (GPP) structure
+winampGeneralPurposePlugin plugin =
+{
+  GPPHDR_VER,  // version of the plugin, defined in GEN.H of Winamp SDK
+  PLUGIN_NAME, // name/title of the plugin
+  init,        // function name which will be executed on init event
+  config,      // function name which will be executed on config event
+  quit,        // function name which will be executed on quit event
+  0,           // handle to Winamp main window, loaded by winamp when this dll is loaded
+  0            // hinstance to this dll, loaded by winamp when this dll is loaded
+};
+
+/** \brief Processes the messages for the given handle.
+ * \param[in] hwnd Handle receiving messages.
+ * \param[in] message message identifier.
+ * \param[in] wParam message parameter.
+ * \param[in] lParam message parameter.
+ *
+ */
+static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+  if(lParam == IPC_CB_MISC && wParam == IPC_CB_MISC_STATUS)
+  {
+    if(SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_ISPLAYING) == 1 && !SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_GETOUTPUTTIME))
+    {
+      char* file = (char*)SendMessage(plugin.hwndParent,WM_WA_IPC, SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_GETLISTPOS),IPC_GETPLAYLISTFILE);
+
+      auto split = [] (const std::string &str, const std::string &delim)
+      {
+        std::vector<std::string> vec;
+        auto i = 0;
+        auto pos = str.find(delim);
+        while (pos != std::string::npos)
+        {
+          vec.push_back(str.substr(i, pos-i));
+          i = ++pos;
+          pos = str.find(delim, pos);
+
+          if (pos == std::string::npos) vec.push_back(str.substr(i, str.length()));
+        }
+
+        return vec;
+      };
+
+      // only output if a valid file was found
+      if(file)
+      {
+        // NOTE: this whole processing stuff is relative to my hard disk drive organization and different location of music.
+        // You should change this to the processing you want to do. In my case I just want to dump some information that will
+        // later be parsed by a OBS plugin (https://obsproject.com/) and be shown on my screencast.
+        //
+        const std::string delimiter{"\\"};
+        const std::string extension{".mp3"};
+        std::string fileStr{file};
+        std::string drive, album, song, picture;
+
+        auto parts = split(fileStr, delimiter);
+
+        drive = parts.front();
+
+        for(auto part: parts)
+        {
+          if(part != parts.back())
+          {
+            picture += part + '\\';
+          }
+          else
+          {
+            picture += "Frontal.jpg";
+          }
+        }
+
+        if(parts.size() >= 3)
+        {
+          song  = parts.back().substr(0, parts.back().find(extension));
+          album = parts.at(parts.size()-2);
+        }
+
+        std::ofstream txtFile;
+        txtFile.open(s_data.pluginPath + "NowPlaying.txt");
+        if(txtFile.is_open())
+        {
+          txtFile << fileStr << std::endl << picture << std::endl << drive << std::endl << album << std::endl << song << std::endl;
+          txtFile.close();
+        }
+      }
+    }
+  }
+
+  return CallWindowProc(s_data.lpWndProcOld,hwnd,message,wParam,lParam);
+}
+
+
+//--------------------------------------------------------------------
+int init()
+{
+  // Fill in the Data struct.
+  s_data.pluginPath = (char *)SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_GETPLUGINDIRECTORY);
+
+  // get the main window handle
+  auto hWndPE = (HWND)SendMessage(plugin.hwndParent,WM_WA_IPC,IPC_GETWND_PE, IPC_GETWND);
+
+  if (!hWndPE) return 0;
+
+  // be a proxy for the main window to receive messages before it does.
+  s_data.lpWndProcOld = subclass(plugin.hwndParent,WndProc);
+
+  return 0;
+}
+
+//--------------------------------------------------------------------
+void config()
+{
+  // Plugin config button, just show a dialog.
+  MessageBoxW(plugin.hwndParent, L"©2017 Felix de las Pozas Alvarez.\n", L"Now Playing! Plugin v1.0", MB_OK);
+}
+
+//--------------------------------------------------------------------
+void quit()
+{
+  // nothing to be done at shutdown.
+}
+
+// We wrap the code in 'extern "C"' to ensure the export isn't mangled if used in a CPP file.
+extern "C" __declspec(dllexport) winampGeneralPurposePlugin * winampGetGeneralPurposePlugin()
+{
+  return &plugin;
+}
+
