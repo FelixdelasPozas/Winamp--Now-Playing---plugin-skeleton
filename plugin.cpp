@@ -37,6 +37,7 @@
 #endif
   
 char PLUGIN_NAME[] = "Now Playing! v1.0";
+const unsigned char note[3]{0xE2, 0x99, 0xAA};
 
 static struct Data s_data;
 
@@ -73,6 +74,24 @@ winampGeneralPurposePlugin plugin =
   0            // hinstance to this dll, loaded by winamp when this dll is loaded
 };
 
+// Splits the given string at the beginning of the given delimiter string.
+std::vector<std::string> split(const std::string &str, const std::string &delim)
+{
+  std::vector<std::string> vec;
+  auto i = 0;
+  auto pos = str.find(delim);
+  while (pos != std::string::npos)
+  {
+    vec.push_back(str.substr(i, pos-i));
+    i = ++pos;
+    pos = str.find(delim, pos);
+
+    if (pos == std::string::npos) vec.push_back(str.substr(i, str.length()));
+  }
+
+  return vec;
+};
+
 /** \brief Processes the messages for the given handle.
  * \param[in] hwnd Handle receiving messages.
  * \param[in] message message identifier.
@@ -82,68 +101,44 @@ winampGeneralPurposePlugin plugin =
  */
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-  if(lParam == IPC_CB_MISC && wParam == IPC_CB_MISC_STATUS)
+  static std::string previousfile; // simple hack to only write the file once per song.
+
+  if(lParam == IPC_CB_MISC && wParam == IPC_CB_MISC_TITLE)
   {
-    if(SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_ISPLAYING) == 1 && !SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_GETOUTPUTTIME))
+    char* file = (char*) SendMessage(plugin.hwndParent, WM_WA_IPC, SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETLISTPOS), IPC_GETPLAYLISTFILE);
+
+    // only output if a valid file was found
+    if (file)
     {
-      char* file = (char*)SendMessage(plugin.hwndParent,WM_WA_IPC, SendMessage(plugin.hwndParent,WM_WA_IPC,0,IPC_GETLISTPOS),IPC_GETPLAYLISTFILE);
-
-      auto split = [] (const std::string &str, const std::string &delim)
+      // NOTE: this whole processing stuff is relative to my hard disk drive organization and different location of music.
+      // You should change this to the processing you want to do. In my case I just want to dump some information that will
+      // later be parsed by a OBS plugin (https://obsproject.com/) and be shown on my screencast.
+      //
+      std::string fileStr{file};
+      if (previousfile != fileStr)
       {
-        std::vector<std::string> vec;
-        auto i = 0;
-        auto pos = str.find(delim);
-        while (pos != std::string::npos)
-        {
-          vec.push_back(str.substr(i, pos-i));
-          i = ++pos;
-          pos = str.find(delim, pos);
-
-          if (pos == std::string::npos) vec.push_back(str.substr(i, str.length()));
-        }
-
-        return vec;
-      };
-
-      // only output if a valid file was found
-      if(file)
-      {
-        // NOTE: this whole processing stuff is relative to my hard disk drive organization and different location of music.
-        // You should change this to the processing you want to do. In my case I just want to dump some information that will
-        // later be parsed by a OBS plugin (https://obsproject.com/) and be shown on my screencast.
-        //
+        previousfile = fileStr;
         const std::string delimiter{"\\"};
         const std::string extension{".mp3"};
-        std::string fileStr{file};
-        std::string drive, album, song, picture;
+        std::string album, song, artist;
 
         auto parts = split(fileStr, delimiter);
 
-        drive = parts.front();
-
-        for(auto part: parts)
+        if (parts.size() >= 3)
         {
-          if(part != parts.back())
-          {
-            picture += part + '\\';
-          }
-          else
-          {
-            picture += "Frontal.jpg";
-          }
-        }
-
-        if(parts.size() >= 3)
-        {
-          song  = parts.back().substr(0, parts.back().find(extension));
-          album = parts.at(parts.size()-2);
+          song = parts.back().substr(0, parts.back().find(extension));
+          auto fullAlbum = parts.at(parts.size() - 2);
+          auto albumParts = split(fullAlbum, " - ");
+          album = albumParts.back().substr(2, albumParts.back().length() - 1);
+          artist = albumParts.front();
         }
 
         std::ofstream txtFile;
-        txtFile.open(s_data.pluginPath + "NowPlaying.txt");
-        if(txtFile.is_open())
+        txtFile.open(s_data.pluginPath + "\\NowPlaying.txt", std::ios::out | std::ios::binary);
+        if (txtFile.is_open())
         {
-          txtFile << fileStr << std::endl << picture << std::endl << drive << std::endl << album << std::endl << song << std::endl;
+          txtFile.write((char*) note, 3);
+          txtFile << u8" Listening to '" << album << u8"' by " << artist << u8". Song: '" << song << u8"'. ";
           txtFile.close();
         }
       }
