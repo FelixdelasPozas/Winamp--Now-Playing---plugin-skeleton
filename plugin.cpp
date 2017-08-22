@@ -127,7 +127,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 
         if (parts.size() >= 3)
         {
-          song = parts.back().substr(0, parts.back().find('.'));
+          if(parts.back().find_last_of('.') != std::string::npos)
+          {
+            song = parts.back().substr(0, parts.back().find_last_of('.'));
+          }
+
           album = parts.at(parts.size() - 2);
           if(album.find(" - ") != std::string::npos)
           {
