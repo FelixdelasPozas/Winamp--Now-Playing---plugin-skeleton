@@ -119,18 +119,22 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
       {
         previousfile = fileStr;
         const std::string delimiter{"\\"};
-        const std::string extension{".mp3"};
-        std::string album, song, artist;
+        std::string album{"Unknown"};
+        std::string song{"Unknown"};
+        std::string artist{""};
 
         auto parts = split(fileStr, delimiter);
 
         if (parts.size() >= 3)
         {
-          song = parts.back().substr(0, parts.back().find(extension));
-          auto fullAlbum = parts.at(parts.size() - 2);
-          auto albumParts = split(fullAlbum, " - ");
-          album = albumParts.back().substr(2, albumParts.back().length() - 1);
-          artist = albumParts.front();
+          song = parts.back().substr(0, parts.back().find('.'));
+          album = parts.at(parts.size() - 2);
+          if(album.find(" - ") != std::string::npos)
+          {
+            auto albumParts = split(album, " - ");
+            album = albumParts.back().substr(2, albumParts.back().length() - 1);
+            artist = u8" by" + albumParts.front();
+          }
         }
 
         std::ofstream txtFile;
@@ -138,7 +142,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
         if (txtFile.is_open())
         {
           txtFile.write((char*) note, 3);
-          txtFile << u8" Listening to '" << album << u8"' by " << artist << u8". Song: '" << song << u8"'. ";
+          txtFile << u8" Listening to '" << album << "'" << artist << u8". Track: '" << song << u8"'. ";
           txtFile.close();
         }
       }
