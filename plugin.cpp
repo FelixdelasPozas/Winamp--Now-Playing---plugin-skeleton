@@ -37,7 +37,7 @@
 #endif
   
 char PLUGIN_NAME[] = "Now Playing! v1.0";
-const unsigned char note[3]{0xE2, 0x99, 0xAA};
+const unsigned char NOTE[3]{0xE2, 0x99, 0xAA};
 
 static struct Data s_data;
 
@@ -75,18 +75,18 @@ winampGeneralPurposePlugin plugin =
 };
 
 // Splits the given string at the beginning of the given delimiter string.
-std::vector<std::string> split(const std::string &str, const std::string &delim)
+std::vector<std::wstring> split(const std::wstring &str, const std::wstring &delim)
 {
-  std::vector<std::string> vec;
+  std::vector<std::wstring> vec;
   auto i = 0;
   auto pos = str.find(delim);
-  while (pos != std::string::npos)
+  while (pos != std::wstring::npos)
   {
     vec.push_back(str.substr(i, pos-i));
     i = ++pos;
     pos = str.find(delim, pos);
 
-    if (pos == std::string::npos) vec.push_back(str.substr(i, str.length()));
+    if (pos == std::wstring::npos) vec.push_back(str.substr(i, str.length()));
   }
 
   return vec;
@@ -101,52 +101,59 @@ std::vector<std::string> split(const std::string &str, const std::string &delim)
  */
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-  static std::string previousfile; // simple hack to only write the file once per song.
+  static std::wstring previousfile; // simple hack to only write the file once per song.
 
   if(lParam == IPC_CB_MISC && wParam == IPC_CB_MISC_TITLE)
   {
-    char* file = (char*) SendMessage(plugin.hwndParent, WM_WA_IPC, SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETLISTPOS), IPC_GETPLAYLISTFILE);
+    auto result = (wchar_t*) SendMessage(plugin.hwndParent, WM_WA_IPC, SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETLISTPOS), IPC_GETPLAYLISTFILEW);
 
     // only output if a valid file was found
-    if (file)
+    if (result)
     {
       // NOTE: this whole processing stuff is relative to my hard disk drive organization and different location of music.
       // You should change this to the processing you want to do. In my case I just want to dump some information that will
       // later be parsed by a OBS plugin (https://obsproject.com/) and be shown on my screencast.
       //
-      std::string fileStr{file};
+      std::wstring fileStr{result};
       if (previousfile != fileStr)
       {
         previousfile = fileStr;
-        const std::string delimiter{"\\"};
-        std::string album{"Unknown"};
-        std::string song{"Unknown"};
-        std::string artist{""};
+        const std::wstring delimiter{L"\\"};
+        std::wstring album{L"Unknown"};
+        std::wstring song{L"Unknown"};
+        std::wstring artist{L""};
+        std::wstring separator{L" - "};
 
         auto parts = split(fileStr, delimiter);
 
         if (parts.size() >= 3)
         {
-          if(parts.back().find_last_of('.') != std::string::npos)
+          if(parts.back().find_last_of('.') != std::wstring::npos)
           {
             song = parts.back().substr(0, parts.back().find_last_of('.'));
           }
 
           album = parts.at(parts.size() - 2);
-          if(album.find(" - ") != std::string::npos)
+          if(album.find(separator) != std::wstring::npos)
           {
-            auto albumParts = split(album, " - ");
+            auto albumParts = split(album, separator);
             album = albumParts.back().substr(2, albumParts.back().length() - 1);
-            artist = u8" by" + albumParts.front();
+            artist = L" by " + albumParts.front();
           }
         }
+
+        std::wstring text{L" Listening to '" + album + L"'" + artist + L". Track: '" + song + L"'. "};
+        auto needed = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), text.length(), nullptr, 0, nullptr, nullptr);
+        char converted[needed + 1];
+        WideCharToMultiByte(CP_UTF8, 0, text.c_str(), text.length(), converted, needed, nullptr, nullptr);
 
         std::ofstream txtFile;
         txtFile.open(s_data.pluginPath + "\\NowPlaying.txt", std::ios::out | std::ios::binary);
         if (txtFile.is_open())
         {
-          txtFile.write((char*) note, 3);
-          txtFile << u8" Listening to '" << album << "'" << artist << u8". Track: '" << song << u8"'. ";
+          txtFile.write((char *)NOTE,3);
+          txtFile.write((char *)NOTE,3);
+          txtFile << converted;
           txtFile.close();
         }
       }
