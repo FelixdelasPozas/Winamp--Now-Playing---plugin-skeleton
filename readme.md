@@ -33,7 +33,7 @@ The only current option is build from source as binaries are not provided.
 
 | Language                     |files          |blank        |comment           |code  |
 |:-----------------------------|--------------:|------------:|-----------------:|-----:|
-| C++                          |    1          |   33        |     48           | 106  |
+| C++                          |    1          |   35        |     48           | 119  |
 | C/C++ Header                 |    1          |    9        |     7            |  26  |
 | CMake                        |    1          |    9        |     21           |  11  |
-| **Total**                    |   **3**       |  **51**     |   **75**         |**143**|
+| **Total**                    |   **3**       |  **53**     |   **76**         |**156**|
